@@ -1,0 +1,15 @@
+[package]
+name = "whquadtree"
+version = "0.0.0"
+edition = "2021"
+license = "MIT or Apache-2.0"
+
+[features]
+slow-tests = [] # Slow tests, these should be run in release mode
+
+[dependencies]
+noisy_float = "0.2.0"
+
+[dependencies.smallvec]
+version = "1.11.0"
+features = ["union", "const_generics", "const_new"]
