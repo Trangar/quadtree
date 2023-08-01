@@ -8,12 +8,12 @@ use smallvec::SmallVec;
 /// [`Index`]: ../index/struct.Index.html
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub enum Bucket<T, const N: usize> {
+pub enum Bucket<T, ID, const N: usize> {
     Nested = 1,
-    Owned(SmallVec<[(IdentityPoint, T); N]>) = 2,
+    Owned(SmallVec<[(IdentityPoint<ID>, T); N]>) = 2,
 }
-impl<T, const N: usize> Bucket<T, N> {
-    pub(crate) fn as_owned_mut(&mut self) -> OwnedMut<T, N> {
+impl<T, ID, const N: usize> Bucket<T, ID, N> {
+    pub(crate) fn as_owned_mut(&mut self) -> OwnedMut<T, ID, N> {
         if let Self::Owned(v) = self {
             OwnedMut(v)
         } else {
@@ -23,14 +23,17 @@ impl<T, const N: usize> Bucket<T, N> {
 }
 
 #[derive(Debug)]
-pub struct OwnedMut<'a, T, const N: usize>(&'a mut SmallVec<[(IdentityPoint, T); N]>);
+pub struct OwnedMut<'a, T, ID, const N: usize>(&'a mut SmallVec<[(IdentityPoint<ID>, T); N]>);
 
-impl<'a, T, const N: usize> OwnedMut<'a, T, N> {
-    pub(crate) fn remove_by_identity(&mut self, identity: u32) -> T {
+impl<'a, T, ID, const N: usize> OwnedMut<'a, T, ID, N>
+where
+    ID: std::cmp::PartialEq<ID>,
+{
+    pub(crate) fn remove_by_identity(&mut self, identity: &ID) -> T {
         let idx = self
             .0
             .iter()
-            .position(|(p, _)| p.identity == identity)
+            .position(|(p, _)| &p.identity == identity)
             .unwrap();
         self.0.remove(idx).1
     }
@@ -58,7 +61,7 @@ impl<'a, T, const N: usize> OwnedMut<'a, T, N> {
         }
     }
 
-    pub(crate) fn into_inner(self) -> &'a mut SmallVec<[(IdentityPoint, T); N]> {
+    pub(crate) fn into_inner(self) -> &'a mut SmallVec<[(IdentityPoint<ID>, T); N]> {
         self.0
     }
 }
@@ -67,18 +70,18 @@ impl<'a, T, const N: usize> OwnedMut<'a, T, N> {
 fn assert_smallvec_size() {
     // make sure we don't accidentally increase the size of a bucket by a change somewhere
     assert_eq!(
-        std::mem::size_of::<Bucket<u32, 10>>(),
-        std::mem::size_of::<Option<SmallVec<[(IdentityPoint, u32); 10]>>>()
+        std::mem::size_of::<Bucket<u32, u32, 10>>(),
+        std::mem::size_of::<Option<SmallVec<[(IdentityPoint<u32>, u32); 10]>>>()
     );
 }
 
-/// A [`Point`] an an identity. This is used to store and look up entries in the [`QuadTree`]
+/// A [`Point`] with an `ID` identity. This is used to store and look up entries in the [`QuadTree`]
 ///
 /// The quad tree will assume that entries with the same [`identity`] can be safely overwritten.
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct IdentityPoint {
+pub struct IdentityPoint<ID> {
     ///
-    pub identity: u32,
+    pub identity: ID,
     ///
     // TODO: Can we get rid of this?
     pub point: Point,

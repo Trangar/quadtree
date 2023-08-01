@@ -8,7 +8,7 @@ mod remove;
 mod update;
 
 /// Helper function to generate an [`IdentityPoint`]
-fn ip(identity: u32, x: f32, y: f32) -> IdentityPoint {
+fn ip(identity: u32, x: f32, y: f32) -> IdentityPoint<u32> {
     IdentityPoint {
         identity,
         point: Point::new(x, y),
@@ -16,7 +16,7 @@ fn ip(identity: u32, x: f32, y: f32) -> IdentityPoint {
 }
 
 /// Helper function to generate a tuple of [`IdentityPoint`] and value `V`
-fn ipv<V>(identity: u32, x: f32, y: f32, value: V) -> (IdentityPoint, V) {
+fn ipv<V>(identity: u32, x: f32, y: f32, value: V) -> (IdentityPoint<u32>, V) {
     (
         IdentityPoint {
             identity,

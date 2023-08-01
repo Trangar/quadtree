@@ -65,8 +65,8 @@ fn arbitrary_r32(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<R32> 
 impl Instruction {
     fn execute(
         self,
-        tree: &mut QuadTree<u32, 4>,
-        flat: &mut Vec<(IdentityPoint, u32)>,
+        tree: &mut QuadTree<u32, u32, 4>,
+        flat: &mut Vec<(u32, Point, u32)>,
         instructions: &[Instruction],
     ) {
         match self {
@@ -81,14 +81,14 @@ impl Instruction {
                     point: Point::new_noisy_float(x, y),
                 };
                 tree.insert(ident, value);
-                flat.retain(|(ip, _)| ip.identity != identity);
-                flat.push((ident, value));
+                flat.retain(|(i, _, _)| *i != identity);
+                flat.push((ident.identity, ident.point, value));
             }
             Self::Update { identity, x, y } => {
                 tree.update(identity, Point::new_noisy_float(x, y));
-                for (ident, _) in flat.iter_mut() {
-                    if ident.identity == identity {
-                        ident.point = Point::new_noisy_float(x, y);
+                for (i, point, _) in flat.iter_mut() {
+                    if *i == identity {
+                        *point = Point::new_noisy_float(x, y);
                         break;
                     }
                 }
@@ -100,20 +100,20 @@ impl Instruction {
                 value,
             } => {
                 tree.update_point_and_value(identity, Point::new_noisy_float(x, y), |v| *v = value);
-                for (ident, v) in flat.iter_mut() {
-                    if ident.identity == identity {
-                        ident.point = Point::new_noisy_float(x, y);
+                for (ident, point, v) in flat.iter_mut() {
+                    if *ident == identity {
+                        *point = Point::new_noisy_float(x, y);
                         *v = value;
                         break;
                     }
                 }
             }
             Self::Remove { identity } => {
-                let flat_idx = flat.iter().position(|(ip, _)| ip.identity == identity);
-                if let Some((value, point)) = tree.try_remove(identity) {
-                    let (flat_ip, flat_value) = flat.remove(flat_idx.unwrap());
+                let flat_idx = flat.iter().position(|(id, _, _)| *id == identity);
+                if let Some((value, point)) = tree.try_remove(&identity) {
+                    let (_, flat_point, flat_value) = flat.remove(flat_idx.unwrap());
                     assert_eq!(value, flat_value);
-                    assert_eq!(point, flat_ip.point);
+                    assert_eq!(point, flat_point);
                 } else {
                     assert!(flat_idx.is_none());
                 }
@@ -131,18 +131,18 @@ impl Instruction {
                 let mut tree_items = Vec::new();
                 let center = Point::new_noisy_float(x, y);
                 let range_squared = range * range;
-                tree.find_range(center, range, |point, value| {
-                    tree_items.push((point, value))
+                tree.find_range(center, range, |id, point, value| {
+                    tree_items.push((*id, point, *value))
                 });
 
                 let mut flat_items = flat
                     .iter()
-                    .filter(|(ip, _)| center.distance_squared_to(ip.point) <= range_squared)
-                    .map(|(ip, value)| (*ip, value))
+                    .filter(|(_, point, _)| center.distance_squared_to(*point) <= range_squared)
+                    .copied()
                     .collect::<Vec<_>>();
 
-                tree_items.sort_by_key(|(ip, _)| ip.identity);
-                flat_items.sort_by_key(|(ip, _)| ip.identity);
+                tree_items.sort_by_key(|(identity, _, _)| *identity);
+                flat_items.sort_by_key(|(identity, _, _)| *identity);
 
                 if tree_items != flat_items {
                     println!("Tree items do not match flat items");

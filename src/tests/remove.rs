@@ -10,7 +10,7 @@ use smallvec::smallvec;
 
 #[test]
 fn in_range() {
-    let mut tree = QuadTree::<u32, 4>::sized_around_origin(Point::new(10., 10.));
+    let mut tree = QuadTree::<u32, u32, 4>::sized_around_origin(Point::new(10., 10.));
 
     for i in 0..5 {
         tree.insert(ip(i, i as f32 - 2.0, i as f32 - 2.0), i);
@@ -29,7 +29,7 @@ fn in_range() {
             ])
         ]
     );
-    let (val, point) = tree.remove(0);
+    let (val, point) = tree.remove(&0);
     assert_eq!(Point::new(-2., -2.), point);
     assert_eq!(0, val);
     assert_eq!(
@@ -45,7 +45,7 @@ fn in_range() {
 
 #[test]
 fn out_of_range() {
-    let mut tree = QuadTree::<u32, 4>::sized_around_origin(Point::new(10., 10.));
+    let mut tree = QuadTree::<u32, u32, 4>::sized_around_origin(Point::new(10., 10.));
     for i in 0..5 {
         tree.insert(ip(i, i as f32 + 8.0, i as f32 + 8.0), i);
     }
@@ -59,14 +59,17 @@ fn out_of_range() {
     );
     assert_eq!(
         tree.outside_of_range,
-        [ipv(3, 11., 11., 3), ipv(4, 12., 12., 4)]
-            .into_iter()
-            .collect()
+        [
+            (3, (3, Point::new(11., 11.))),
+            (4, (4, Point::new(12., 12.)))
+        ]
+        .into_iter()
+        .collect()
     );
-    tree.remove(3);
+    tree.remove(&3);
     assert_eq!(
         tree.outside_of_range,
-        [ipv(4, 12., 12., 4)].into_iter().collect()
+        [(4, (4, Point::new(12., 12.)))].into_iter().collect()
     );
     assert_eq!(
         tree.identity_to_point,

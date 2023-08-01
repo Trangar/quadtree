@@ -5,7 +5,7 @@ use noisy_float::types::r32;
 
 #[test]
 pub fn in_range() {
-    let mut tree = QuadTree::<u32, 4>::sized_around_origin(Point::new(10., 10.));
+    let mut tree = QuadTree::<u32, u32, 4>::sized_around_origin(Point::new(10., 10.));
 
     let mut n = 0;
     // Create a cross of points around 0,0
@@ -23,42 +23,46 @@ pub fn in_range() {
     }
 
     let mut points = Vec::new();
-    tree.find_range(Point::zero(), r32(3.5), |p, v| points.push((p, v)));
+    tree.find_range(Point::zero(), r32(3.5), |id, point, v| {
+        points.push((*id, point.x, point.y, *v))
+    });
     assert_eq!(
         points,
         vec![
-            (ip(8, -2.0, -2.0), &8),
-            (ip(9, -1.0, -1.0), &9),
-            (ip(31, 1.0, -1.0), &31),
-            (ip(32, 2.0, -2.0), &32),
-            (ip(29, -2.0, 2.0), &29),
-            (ip(30, -1.0, 1.0), &30),
-            (ip(10, 0.0, 0.0), &10),
-            (ip(11, 1.0, 1.0), &11),
-            (ip(12, 2.0, 2.0), &12),
+            (8, r32(-2.0), r32(-2.0), 8),
+            (9, -r32(1.0), r32(-1.0), 9),
+            (31, r32(1.0), r32(-1.0), 31),
+            (32, r32(2.0), r32(-2.0), 32),
+            (29, r32(-2.0), r32(2.0), 29),
+            (30, r32(-1.0), r32(1.0), 30),
+            (10, r32(0.0), r32(0.0), 10),
+            (11, r32(1.0), r32(1.0), 11),
+            (12, r32(2.0), r32(2.0), 12),
         ]
     );
 
     let mut points = Vec::new();
-    tree.find_range(Point::new(4.5, 4.5), r32(5.5), |p, v| points.push((p, v)));
+    tree.find_range(Point::new(4.5, 4.5), r32(5.5), |id, point, v| {
+        points.push((*id, point.x, point.y, *v))
+    });
     assert_eq!(
         points,
         vec![
-            (ip(11, 1.0, 1.0), &11),
-            (ip(12, 2.0, 2.0), &12),
-            (ip(13, 3.0, 3.0), &13),
-            (ip(14, 4.0, 4.0), &14),
-            (ip(15, 5.0, 5.0), &15),
-            (ip(16, 6.0, 6.0), &16),
-            (ip(17, 7.0, 7.0), &17),
-            (ip(18, 8.0, 8.0), &18),
+            (11, r32(1.0), r32(1.0), 11),
+            (12, r32(2.0), r32(2.0), 12),
+            (13, r32(3.0), r32(3.0), 13),
+            (14, r32(4.0), r32(4.0), 14),
+            (15, r32(5.0), r32(5.0), 15),
+            (16, r32(6.0), r32(6.0), 16),
+            (17, r32(7.0), r32(7.0), 17),
+            (18, r32(8.0), r32(8.0), 18),
         ]
     );
 }
 
 #[test]
 pub fn out_of_range() {
-    let mut tree = QuadTree::<u32, 4>::sized_around_origin(Point::new(10., 10.));
+    let mut tree = QuadTree::<u32, u32, 4>::sized_around_origin(Point::new(10., 10.));
 
     for (n, i) in (-15..=15).enumerate() {
         let n = u32::try_from(n).unwrap();
@@ -66,15 +70,17 @@ pub fn out_of_range() {
     }
 
     let mut points = Vec::new();
-    tree.find_range(Point::new(-10., -10.), r32(3.5), |p, v| points.push((p, v)));
+    tree.find_range(Point::new(-10., -10.), r32(3.5), |id, point, v| {
+        points.push((*id, point.x, point.y, *v))
+    });
     assert_eq!(
         points,
         vec![
-            (ip(5, -10.0, -10.0), &5),
-            (ip(6, -9.0, -9.0), &6),
-            (ip(7, -8.0, -8.0), &7),
-            (ip(3, -12.0, -12.0), &3),
-            (ip(4, -11.0, -11.0), &4),
+            (5, r32(-10.0), r32(-10.0), 5),
+            (6, r32(-9.0), r32(-9.0), 6),
+            (7, r32(-8.0), r32(-8.0), 7),
+            (3, r32(-12.0), r32(-12.0), 3),
+            (4, r32(-11.0), r32(-11.0), 4),
         ]
     );
 }

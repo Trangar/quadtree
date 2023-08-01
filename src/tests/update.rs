@@ -13,7 +13,7 @@ use smallvec::smallvec;
 
 #[test]
 fn validate_simple() {
-    let mut tree = QuadTree::<u32, 4>::sized_around_origin(Point::new(10., 10.));
+    let mut tree = QuadTree::<u32, u32, 4>::sized_around_origin(Point::new(10., 10.));
     tree.insert(ip(1, 1.0, 1.0), 1);
 
     assert_eq!(
@@ -48,7 +48,7 @@ fn validate_simple() {
 
 #[test]
 fn validate_nested() {
-    let mut tree = QuadTree::<i32, 4>::sized_around_origin(Point::new(10., 10.));
+    let mut tree = QuadTree::<i32, u32, 4>::sized_around_origin(Point::new(10., 10.));
     for n in -2..=2 {
         tree.insert(ip(u32::try_from(n + 2).unwrap(), n as f32, n as f32), n);
     }
@@ -87,7 +87,7 @@ fn validate_nested() {
 
 #[test]
 fn validate_out_of_range() {
-    let mut tree = QuadTree::<u32, 4>::sized_around_origin(Point::new(10., 10.));
+    let mut tree = QuadTree::<u32, u32, 4>::sized_around_origin(Point::new(10., 10.));
     tree.insert(ip(1, 1.0, 1.0), 1);
     assert_eq!(
         tree.items,
@@ -98,7 +98,7 @@ fn validate_out_of_range() {
     assert_eq!(tree.items, vec![Bucket::Owned(smallvec![])]);
     assert_eq!(
         tree.outside_of_range,
-        [ipv(1, 11., 11., 1)].into_iter().collect()
+        [(1, (1, Point::new(11., 11.)))].into_iter().collect()
     );
     tree.insert(ip(1, 1.0, 1.0), 1);
     assert_eq!(
@@ -110,7 +110,7 @@ fn validate_out_of_range() {
 
 #[test]
 fn validate_update() {
-    let mut tree = QuadTree::<u32, 4>::sized_around_origin(Point::new(10., 10.));
+    let mut tree = QuadTree::<u32, u32, 4>::sized_around_origin(Point::new(10., 10.));
     tree.insert(ip(1, 1.0, 1.0), 1);
     assert_eq!(
         tree.items,
@@ -141,7 +141,7 @@ fn validate_update() {
     assert_eq!(tree.items, vec![Bucket::Owned(smallvec![])]);
     assert_eq!(
         tree.outside_of_range,
-        [ipv(1, 11., 11., 3)].into_iter().collect()
+        [(1, (3, Point::new(11., 11.)))].into_iter().collect()
     );
     assert_eq!(
         tree.identity_to_point,

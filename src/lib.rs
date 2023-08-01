@@ -19,7 +19,7 @@ pub use bucket::IdentityPoint;
 pub use noisy_float::types::R32;
 pub use point::Point;
 
-/// The quad tree implementation. This is generic over value `T`, with bucket size of `N`.
+/// The quad tree implementation. This is generic over value `T`, with bucket size of `N`. Each item should have unique identity `ID`
 ///
 /// This tree will split when more than `n` items are inserted. Each split will have its own capacity of `N` items.
 ///
@@ -27,14 +27,17 @@ pub use point::Point;
 ///
 /// A good starting value for `N` is 4.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct QuadTree<T, const N: usize> {
+pub struct QuadTree<T, ID, const N: usize> {
     rect: point::Rect,
-    items: Vec<Bucket<T, N>>,
-    outside_of_range: BTreeMap<IdentityPoint, T>,
-    identity_to_point: BTreeMap<u32, (Point, Option<Index>)>,
+    items: Vec<Bucket<T, ID, N>>,
+    outside_of_range: BTreeMap<ID, (T, Point)>,
+    identity_to_point: BTreeMap<ID, (Point, Option<Index>)>,
 }
 
-impl<T, const N: usize> QuadTree<T, N> {
+impl<T, ID, const N: usize> QuadTree<T, ID, N>
+where
+    ID: std::cmp::Ord + std::fmt::Display + Clone + std::cmp::PartialEq<ID>,
+{
     /// Create a new [`QuadTree`] which covers the area between `top_left` and `bottom_right`. Points outside of this range will be inserted in a slow [`BTreeMap`], so choose this value carefully.
     ///
     /// When dealing with a perfect rectangle around point `0, 0`, you can use `sized_around_origin` instead
@@ -57,27 +60,23 @@ impl<T, const N: usize> QuadTree<T, N> {
     }
 
     /// Insert a value `value` at the given `point`. If the existing `point.identity` already exists, it will be updated instead.
-    pub fn insert(&mut self, point: IdentityPoint, value: T) {
-        if let Some((old_point, old_index)) = self.identity_to_point.remove(&point.identity) {
+    pub fn insert(&mut self, point: IdentityPoint<ID>, value: T) {
+        if let Some((_, old_index)) = self.identity_to_point.remove(&point.identity) {
             let mut value = Some(value);
-            let new_index = self.update_inner(
-                point.identity,
-                old_point,
-                point.point,
-                old_index,
-                |old_value, idx| {
+            let new_index =
+                self.update_inner(&point.identity, point.point, old_index, |old_value, idx| {
                     if let Some(value) = value.take() {
                         *old_value = value;
                     }
                     idx
-                },
-            );
+                });
             self.identity_to_point
                 .insert(point.identity, (point.point, new_index));
             return;
         }
         if !self.rect.contains(point.point) {
-            self.outside_of_range.insert(point, value);
+            self.outside_of_range
+                .insert(point.identity.clone(), (value, point.point));
             self.identity_to_point
                 .insert(point.identity, (point.point, None));
             return;
@@ -89,7 +88,7 @@ impl<T, const N: usize> QuadTree<T, N> {
             point.point,
             true,
             |bucket, index| {
-                bucket.push((point, value));
+                bucket.push((point.clone(), value));
                 index
             },
         );
@@ -100,12 +99,9 @@ impl<T, const N: usize> QuadTree<T, N> {
     /// Update the given identity to the new point.
     ///
     /// Will return `true` if the identity was found and updated, `false` otherwise
-    pub fn update(&mut self, identity: u32, point: Point) -> bool {
-        if let Some((old_point, maybe_index)) = self.identity_to_point.remove(&identity) {
-            let new_idx =
-                self.update_inner(identity, old_point, point, maybe_index, |_, new_idx| {
-                    new_idx
-                });
+    pub fn update(&mut self, identity: ID, point: Point) -> bool {
+        if let Some((_, maybe_index)) = self.identity_to_point.remove(&identity) {
+            let new_idx = self.update_inner(&identity, point, maybe_index, |_, new_idx| new_idx);
             self.identity_to_point.insert(identity, (point, new_idx));
             true
         } else {
@@ -118,16 +114,15 @@ impl<T, const N: usize> QuadTree<T, N> {
     /// Will return `true` if the identity was found and updated, `false` otherwise
     pub fn update_point_and_value(
         &mut self,
-        identity: u32,
+        identity: ID,
         point: Point,
         callback: impl FnOnce(&mut T),
     ) -> bool {
-        if let Some((old_point, maybe_index)) = self.identity_to_point.remove(&identity) {
-            let new_idx =
-                self.update_inner(identity, old_point, point, maybe_index, |val, new_idx| {
-                    callback(val);
-                    new_idx
-                });
+        if let Some((_, maybe_index)) = self.identity_to_point.remove(&identity) {
+            let new_idx = self.update_inner(&identity, point, maybe_index, |val, new_idx| {
+                callback(val);
+                new_idx
+            });
             self.identity_to_point.insert(identity, (point, new_idx));
             true
         } else {
@@ -140,15 +135,15 @@ impl<T, const N: usize> QuadTree<T, N> {
     /// # Panics
     ///
     /// Will panic if the identity is not found in this quad tree.
-    pub fn remove(&mut self, identity: u32) -> (T, Point) {
+    pub fn remove(&mut self, identity: &ID) -> (T, Point) {
         self.try_remove(identity)
             .unwrap_or_else(|| panic!("Identity {identity} not found"))
     }
 
     /// Try to remove the entry with the given identity from this quad tree. Will return the entry and the last know position if it's found, `None` otherwise.
     #[allow(clippy::missing_panics_doc)] // should not panic unless the internal state is wrong
-    pub fn try_remove(&mut self, identity: u32) -> Option<(T, Point)> {
-        let (point, index) = self.identity_to_point.remove(&identity)?;
+    pub fn try_remove(&mut self, identity: &ID) -> Option<(T, Point)> {
+        let (point, index) = self.identity_to_point.remove(identity)?;
         if let Some(index) = index {
             let result = self.items[index.to_idx()]
                 .as_owned_mut()
@@ -159,11 +154,7 @@ impl<T, const N: usize> QuadTree<T, N> {
             }
             Some((result, point))
         } else {
-            let result = self
-                .outside_of_range
-                .remove(&IdentityPoint { identity, point })
-                .unwrap();
-            Some((result, point))
+            self.outside_of_range.remove(identity)
         }
     }
 
@@ -174,25 +165,27 @@ impl<T, const N: usize> QuadTree<T, N> {
         &'a self,
         center: Point,
         range: R32,
-        mut callback: impl FnMut(IdentityPoint, &'a T),
+        mut callback: impl FnMut(&ID, Point, &'a T),
     ) {
         let ctx = FindRangeCtx::new(center, range);
 
         self.find_range_inner(self.rect, Index::ROOT, &ctx, &mut callback);
 
-        for (ip, value) in &self.outside_of_range {
-            if ctx.point_in_range(ip.point) {
-                callback(*ip, value);
+        for (ip, (value, point)) in &self.outside_of_range {
+            if ctx.point_in_range(*point) {
+                callback(ip, *point, value);
             }
         }
     }
 }
 
-impl<T, const N: usize> QuadTree<T, N> {
+impl<T, ID, const N: usize> QuadTree<T, ID, N>
+where
+    ID: std::cmp::Ord + std::fmt::Display + Clone,
+{
     fn update_inner<R>(
         &mut self,
-        identity: u32,
-        old_point: Point,
+        identity: &ID,
         new_point: Point,
         old_index: Option<Index>,
         callback: impl FnOnce(&mut T, Option<Index>) -> R,
@@ -209,7 +202,8 @@ impl<T, const N: usize> QuadTree<T, N> {
                 |bucket, idx| {
                     // if the new index is the same as the old index, we just update it in-place and early return
                     if Some(idx) == old_index {
-                        if let Some(n) = bucket.iter().position(|(ip, _)| ip.identity == identity) {
+                        if let Some(n) = bucket.iter().position(|(ip, _)| &ip.identity == identity)
+                        {
                             let (ip, t) = &mut bucket[n];
                             let result = (callback.take().unwrap())(t, Some(idx));
                             ip.point = new_point;
@@ -233,52 +227,49 @@ impl<T, const N: usize> QuadTree<T, N> {
                 .as_owned_mut()
                 .remove_by_identity(identity)
         } else {
-            self.outside_of_range
-                .remove(&IdentityPoint {
-                    point: old_point,
-                    identity,
-                })
-                .unwrap()
+            self.outside_of_range.remove(identity).unwrap().0
         };
-        let ident = IdentityPoint {
-            point: new_point,
-            identity,
-        };
-
         if let Some(index) = new_index {
             // new point is in this quad tree, quick insert it
             let bucket = self.items[index.to_idx()].as_owned_mut();
             let (smallvec, new_index) =
-                if bucket.requires_split(self.rect.get_index_rect(index), Some(ident.point)) {
+                if bucket.requires_split(self.rect.get_index_rect(index), Some(new_point)) {
                     let (new_vec, new_index) = Self::split(
                         &mut self.items,
                         &mut self.identity_to_point,
                         self.rect,
                         index,
-                        ident.point,
+                        new_point,
                     );
                     (new_vec, Some(new_index))
                 } else {
                     (bucket.into_inner(), new_index)
                 };
             let result = (callback.take().unwrap())(&mut value, new_index);
-            smallvec.push((ident, value));
+            smallvec.push((
+                IdentityPoint::<ID> {
+                    point: new_point,
+                    identity: identity.clone(),
+                },
+                value,
+            ));
             result
         } else {
             // new point is out of range of this quad tree, simply insert it into `out_of_range`
             let result = (callback.take().unwrap())(&mut value, None);
-            self.outside_of_range.insert(ident, value);
+            self.outside_of_range
+                .insert(identity.clone(), (value, new_point));
             result
         }
     }
 
     fn find_bucket_mut<R>(
-        items: &mut Vec<Bucket<T, N>>,
-        identity_to_point: &mut BTreeMap<u32, (Point, Option<Index>)>,
+        items: &mut Vec<Bucket<T, ID, N>>,
+        identity_to_point: &mut BTreeMap<ID, (Point, Option<Index>)>,
         mut rect: point::Rect,
         point: Point,
         require_resize: bool,
-        cb: impl FnOnce(&mut SmallVec<[(IdentityPoint, T); N]>, Index) -> R,
+        cb: impl FnOnce(&mut SmallVec<[(IdentityPoint<ID>, T); N]>, Index) -> R,
     ) -> R {
         let mut index = Index::ROOT;
         loop {
@@ -306,12 +297,12 @@ impl<T, const N: usize> QuadTree<T, N> {
     }
 
     fn split<'a>(
-        items: &'a mut Vec<Bucket<T, N>>,
-        identity_to_point: &mut BTreeMap<u32, (Point, Option<Index>)>,
+        items: &'a mut Vec<Bucket<T, ID, N>>,
+        identity_to_point: &mut BTreeMap<ID, (Point, Option<Index>)>,
         rect: point::Rect,
         index: Index,
         point: Point,
-    ) -> (&'a mut SmallVec<[(IdentityPoint, T); N]>, Index) {
+    ) -> (&'a mut SmallVec<[(IdentityPoint<ID>, T); N]>, Index) {
         let new_item_quadrant = rect.get_quadrant(point).1;
 
         if let Some(Bucket::Owned(smallvec)) = items.get_mut(index.to_idx()) {
@@ -352,7 +343,7 @@ impl<T, const N: usize> QuadTree<T, N> {
                     }
                 }
             };
-            smallvec.push((point, value));
+            smallvec.push((point.clone(), value));
 
             identity_to_point.insert(point.identity, (point.point, Some(index)));
         }
@@ -389,7 +380,7 @@ impl<T, const N: usize> QuadTree<T, N> {
                 let Bucket::Owned(n) = std::mem::replace(&mut self.items[child_idx.to_idx()], Bucket::Nested) else { unreachable!() };
                 for (ip, value) in n {
                     self.identity_to_point
-                        .insert(ip.identity, (ip.point, Some(index)));
+                        .insert(ip.identity.clone(), (ip.point, Some(index)));
                     parent.push((ip, value));
                 }
             }
@@ -407,7 +398,7 @@ impl<T, const N: usize> QuadTree<T, N> {
         rect: Rect,
         index: Index,
         ctx: &FindRangeCtx,
-        callback: &mut impl FnMut(IdentityPoint, &'a T),
+        callback: &mut impl FnMut(&ID, Point, &'a T),
     ) {
         if !ctx.contains_rect(rect) {
             return;
@@ -416,7 +407,7 @@ impl<T, const N: usize> QuadTree<T, N> {
             Some(Bucket::Owned(items)) => {
                 for (ident, val) in items {
                     if ctx.point_in_range(ident.point) {
-                        callback(*ident, val);
+                        callback(&ident.identity, ident.point, val);
                     }
                 }
             }
@@ -454,10 +445,10 @@ impl FindRangeCtx {
     }
 }
 
-fn ensure_index_valid<T, const N: usize>(
-    items: &mut Vec<Bucket<T, N>>,
+fn ensure_index_valid<T, ID, const N: usize>(
+    items: &mut Vec<Bucket<T, ID, N>>,
     index: Index,
-) -> &mut Bucket<T, N> {
+) -> &mut Bucket<T, ID, N> {
     if let Some(index) = index.parent() {
         let index = index.child_at(point::Quadrant::BottomRight);
         let new_max_item_count = index.to_idx();
@@ -472,7 +463,7 @@ fn ensure_index_valid<T, const N: usize>(
     unsafe { items.get_unchecked_mut(index.to_idx()) }
 }
 
-// fn debug_tree<T: std::fmt::Debug, const N: usize>(items: &[Bucket<T, N>], index: Index) {
+// fn debug_tree<T: std::fmt::Debug, const N: usize>(items: &[Bucket<T, ID, N>], index: Index) {
 //     let ident = String::from(' ').repeat(index.depth());
 //     match items.get(index.to_idx()) {
 //         Some(Bucket::Nested) => {

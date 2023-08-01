@@ -10,7 +10,7 @@ use smallvec::{smallvec, SmallVec};
 
 #[test]
 fn validate() {
-    let mut tree = QuadTree::<u32, 4>::new(Point::zero(), Point::new(8., 8.));
+    let mut tree = QuadTree::<u32, u32, 4>::new(Point::zero(), Point::new(8., 8.));
     tree.insert(ip(1, 1.0, 1.0), 1);
 
     assert_eq!(
@@ -68,7 +68,7 @@ fn validate() {
 
 #[test]
 fn out_of_bounds() {
-    let mut tree = QuadTree::<u32, 4>::sized_around_origin(Point::new(20., 20.));
+    let mut tree = QuadTree::<u32, u32, 4>::sized_around_origin(Point::new(20., 20.));
     tree.insert(ip(0, 25., 25.), 0);
     assert_eq!(tree.items, vec![Bucket::Owned(smallvec![])]);
     assert_eq!(tree.outside_of_range.len(), 1);
@@ -103,7 +103,7 @@ fn out_of_bounds() {
 
 #[test]
 fn insert_same_identity() {
-    let mut tree = QuadTree::<u32, 4>::sized_around_origin(Point::new(20., 20.));
+    let mut tree = QuadTree::<u32, u32, 4>::sized_around_origin(Point::new(20., 20.));
     assert_eq!(tree.items, vec![Bucket::Owned(SmallVec::new())]);
     tree.insert(ip(1, 0.0, 0.0), 1);
     assert_eq!(
@@ -120,7 +120,7 @@ fn insert_same_identity() {
 #[allow(clippy::unreadable_literal)] // these values come from fuzzing, they're expected to be unreadable
 #[test]
 fn fuzz_results() {
-    let mut tree = QuadTree::<u32, 4>::sized_around_origin(Point::new(10., 10.));
+    let mut tree = QuadTree::<u32, u32, 4>::sized_around_origin(Point::new(10., 10.));
     for (identity, x, y, value) in [
         (66681u32, 3.57e-43, 0.0, 2717566207u32),
         (11599872, 3.57e-43, 0.0, 0),
@@ -141,7 +141,7 @@ fn fuzz_results() {
         println!("itp: {:?}", tree.identity_to_point);
     }
     for identity in [50529027, 0] {
-        let removed = tree.remove(identity);
+        let removed = tree.remove(&identity);
         println!("---");
         println!("Removed {removed:?}");
         println!("items: {:?}", tree.items);
